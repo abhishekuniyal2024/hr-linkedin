@@ -245,4 +245,4 @@ For support and questions:
 - [ ] Multi-language support
 - [ ] Dashboard for workflow monitoring
 - [ ] Integration with ATS systems
-- [ ] Advanced analytics and reporting 
+- [ ] Advanced analytics and reporting #ai-hiring-automation
