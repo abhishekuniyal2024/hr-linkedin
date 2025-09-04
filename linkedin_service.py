@@ -10,46 +10,226 @@ class LinkedInService:
         self.headers = {
             "Authorization": f"Bearer {self.access_token}",
             "Content-Type": "application/json",
-            "X-Restli-Protocol-Version": "2.0.0"
+            "X-Restli-Protocol-Version": "2.0.0",
+            "LinkedIn-Version": "202405",
+            "Content-Language": "en_US"
         }
-    
-    def post_job(self, job_data: Dict[str, Any]) -> Optional[str]:
-        """Post a job to LinkedIn"""
+        self.mock_mode = Config.MOCK_LINKEDIN_MODE # Add mock mode
+        self.person_urn = getattr(Config, "LINKEDIN_PERSON_URN", None)
+        self.post_mode = getattr(Config, "LINKEDIN_POST_MODE", "feed")
+
+    def _ensure_person_urn(self) -> Optional[str]:
+        """Ensure we have the author's person URN; fetch from /me if missing."""
+        # Sanitize any configured value; ignore URLs or malformed values
+        if isinstance(self.person_urn, str):
+            candidate = self.person_urn.strip()
+            if candidate.startswith("urn:li:person:"):
+                self.person_urn = candidate
+                return self.person_urn
+            # Ignore if it's a URL or not a proper URN
+            if "linkedin.com" in candidate or not candidate.startswith("urn:"):
+                self.person_urn = None
         try:
-            # LinkedIn job posting endpoint
+            me_url = f"{self.base_url}/me"
+            resp = requests.get(me_url, headers={
+                "Authorization": f"Bearer {self.access_token}",
+                "X-Restli-Protocol-Version": "2.0.0"
+            })
+            if resp.status_code == 200:
+                data = resp.json()
+                # Prefer explicit URN if present
+                urn = data.get("urn") or data.get("entityUrn")
+                if isinstance(urn, str) and urn.startswith("urn:li:person:"):
+                    self.person_urn = urn
+                    return self.person_urn
+                # Fallback to id and normalize
+                person_id = data.get("id")
+                if isinstance(person_id, str):
+                    if person_id.startswith("urn:li:person:"):
+                        self.person_urn = person_id
+                    else:
+                        self.person_urn = f"urn:li:person:{person_id}"
+                    return self.person_urn
+            else:
+                print(f"Failed to fetch LinkedIn profile: {resp.status_code} - {resp.text}")
+        except Exception as e:
+            print(f"Error fetching LinkedIn profile: {str(e)}")
+        return None
+
+    def post_job(self, job_data: Dict[str, Any]) -> Optional[str]:
+        """Post a job to LinkedIn as a feed share or via jobs API depending on config."""
+        if self.mock_mode:
+            print(f"[MOCK LINKEDIN] Posting job: {job_data['title']}")
+            return "mock_linkedin_job_id_123"
+
+        if self.post_mode == "feed":
+            result = self._post_job_as_feed(job_data)
+            if result is None:
+                # Fallback to REST Posts API if UGC fails
+                print("UGC post failed; attempting fallback via /rest/posts...")
+                return self._post_job_via_rest_posts(job_data)
+            return result
+        else:
+            return self._post_job_via_jobs_api(job_data)
+
+    def _post_job_as_feed(self, job_data: Dict[str, Any]) -> Optional[str]:
+        """Create a LinkedIn feed post (ugcPosts) on behalf of the configured person URN."""
+        if not self._ensure_person_urn():
+            print("LinkedIn profile not resolved. Ensure your token is valid and has w_member_social.")
+            return None
+        # Always use the resolved profile URN from the token to avoid ACCESS_DENIED on author
+        author_urn = self.person_urn
+        print(f"Using LinkedIn author URN: {author_urn}")
+
+        try:
+            url = f"{self.base_url}/ugcPosts"
+
+            title = job_data.get("title", "New Job Opportunity")
+            location = job_data.get("location", "Remote")
+            salary = job_data.get("salary_range", {})
+            salary_text = ""
+            if isinstance(salary, dict) and "min" in salary and "max" in salary:
+                salary_text = f"\nSalary: ₹{salary['min']:,} - ₹{salary['max']:,}"
+
+            description = job_data.get("description", "")
+            requirements = job_data.get("requirements", [])
+            req_lines = "\n".join([f"- {r}" for r in requirements]) if requirements else ""
+
+            commentary = (
+                f"We're hiring! {title} ({location}){salary_text}\n\n"
+                f"About the role:\n{description}\n\n"
+                f"Requirements:\n{req_lines}"
+            ).strip()
+
+            payload = {
+                "author": author_urn,
+                "lifecycleState": "PUBLISHED",
+                "specificContent": {
+                    "com.linkedin.ugc.ShareContent": {
+                        "shareCommentary": {"text": commentary[:1300]},
+                        "shareMediaCategory": "NONE"
+                    }
+                },
+                "visibility": {
+                    "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
+                }
+            }
+
+            response = requests.post(url, headers=self.headers, json=payload)
+
+            if response.status_code in (201, 200):
+                data = response.json() if response.content else {}
+                post_urn = data.get("id") or data.get("urn") or data.get("entity")
+                print(f"Feed post created successfully as your profile: {post_urn}")
+                return post_urn or "linkedin_feed_post_created"
+            else:
+                print(f"Failed to create feed post: {response.status_code} - {response.text}")
+                return None
+        except Exception as e:
+            print(f"Error creating LinkedIn feed post: {str(e)}")
+            return None
+
+    def _post_job_via_rest_posts(self, job_data: Dict[str, Any]) -> Optional[str]:
+        """Create a LinkedIn post via the newer REST Posts API."""
+        if not self._ensure_person_urn():
+            print("LinkedIn profile not resolved. Ensure your token is valid and has w_member_social.")
+            return None
+
+        author_urn = self.person_urn
+        print(f"Using LinkedIn author URN (REST): {author_urn}")
+
+        try:
+            url = "https://api.linkedin.com/rest/posts"
+            # Use a headers copy without LinkedIn-Version to avoid NONEXISTENT_VERSION errors
+            rest_headers = dict(self.headers)
+            rest_headers.pop("LinkedIn-Version", None)
+
+            title = job_data.get("title", "New Job Opportunity")
+            location = job_data.get("location", "Remote")
+            salary = job_data.get("salary_range", {})
+            salary_text = ""
+            if isinstance(salary, dict) and "min" in salary and "max" in salary:
+                salary_text = f"\nSalary: ₹{salary['min']:,} - ₹{salary['max']:,}"
+
+            description = job_data.get("description", "")
+            requirements = job_data.get("requirements", [])
+            req_lines = "\n".join([f"- {r}" for r in requirements]) if requirements else ""
+
+            commentary = (
+                f"We're hiring! {title} ({location}){salary_text}\n\n"
+                f"About the role:\n{description}\n\n"
+                f"Requirements:\n{req_lines}"
+            ).strip()[:1300]
+
+            payload = {
+                "author": author_urn,
+                "commentary": commentary,
+                "visibility": "PUBLIC",
+                "distribution": {
+                    "feedDistribution": "MAIN_FEED",
+                    "targetEntities": [],
+                    "thirdPartyDistributionChannels": []
+                },
+                "lifecycleState": "PUBLISHED",
+                "isReshareable": True
+            }
+
+            response = requests.post(url, headers=rest_headers, json=payload)
+
+            if response.status_code in (201, 200):
+                data = response.json() if response.content else {}
+                post_urn = data.get("id") or data.get("urn") or data.get("entity")
+                print(f"REST post created successfully as your profile: {post_urn}")
+                return post_urn or "linkedin_rest_post_created"
+            else:
+                print(f"Failed to create REST post: {response.status_code} - {response.text}")
+                return None
+        except Exception as e:
+            print(f"Error creating LinkedIn REST post: {str(e)}")
+            return None
+
+    def _post_job_via_jobs_api(self, job_data: Dict[str, Any]) -> Optional[str]:
+        """Attempt to create a job posting via LinkedIn Jobs API (requires special partner access)."""
+        try:
             url = f"{self.base_url}/jobPostings"
-            
-            # Format job data for LinkedIn API
+
             linkedin_job = {
-                "title": job_data["title"],
-                "description": job_data["description"],
+                "title": job_data.get("title"),
+                "description": job_data.get("description"),
                 "location": job_data.get("location", "Remote"),
                 "employmentStatus": "FULL_TIME",
                 "seniorityLevel": "MID_SENIOR",
-                "jobFunctions": ["ENGINEERING"],  # Default, should be customized
+                "jobFunctions": ["ENGINEERING"],
                 "salaryInsights": {
                     "currency": "USD",
-                    "min": job_data["salary_range"]["min"],
-                    "max": job_data["salary_range"]["max"]
+                    "min": job_data.get("salary_range", {}).get("min"),
+                    "max": job_data.get("salary_range", {}).get("max")
                 }
             }
-            
+
             response = requests.post(url, headers=self.headers, json=linkedin_job)
-            
-            if response.status_code == 201:
+
+            if response.status_code in (201, 200):
                 job_id = response.json().get("id")
                 print(f"Job posted successfully with ID: {job_id}")
                 return job_id
             else:
                 print(f"Failed to post job: {response.status_code} - {response.text}")
                 return None
-                
         except Exception as e:
             print(f"Error posting job to LinkedIn: {str(e)}")
             return None
     
     def get_applicants(self, job_id: str) -> List[Dict[str, Any]]:
         """Get applicants for a specific job posting"""
+        if self.mock_mode:
+            print(f"[MOCK LINKEDIN] Getting applicants for job ID: {job_id}")
+            return [
+                {"id": "cand_001", "name": "Alice Smith", "email": "alice@example.com", "phone": "111-222-3333", "resume_url": "http://example.com/alice_resume.pdf", "applied_at": "2023-01-01", "status": "APPLIED", "experience_years": 7, "skills": ["Python", "Machine Learning"]},
+                {"id": "cand_002", "name": "Bob Johnson", "email": "bob@example.com", "phone": "444-555-6666", "resume_url": "http://example.com/bob_resume.pdf", "applied_at": "2023-01-02", "status": "APPLIED", "experience_years": 4, "skills": ["Java", "Spring Boot"]},
+                {"id": "cand_003", "name": "Charlie Brown", "email": "charlie@example.com", "phone": "777-888-9999", "resume_url": "http://example.com/charlie_resume.pdf", "applied_at": "2023-01-03", "status": "APPLIED", "experience_years": 10, "skills": ["C++", "Embedded Systems"]}
+            ]
+
         try:
             url = f"{self.base_url}/jobPostings/{job_id}/applications"
             response = requests.get(url, headers=self.headers)
@@ -66,7 +246,9 @@ class LinkedInService:
                         "phone": app.get("applicant", {}).get("phone"),
                         "resume_url": app.get("resume", {}).get("url"),
                         "applied_at": app.get("appliedAt"),
-                        "status": app.get("status")
+                        "status": app.get("status"),
+                        "experience_years": 5,  # Mock data
+                        "skills": ["Python", "SQL", "Cloud"] # Mock data
                     }
                     applicants.append(applicant)
                 
@@ -81,6 +263,10 @@ class LinkedInService:
     
     def update_job_posting(self, job_id: str, updates: Dict[str, Any]) -> bool:
         """Update an existing job posting"""
+        if self.mock_mode:
+            print(f"[MOCK LINKEDIN] Updating job ID: {job_id} with: {updates}")
+            return True
+
         try:
             url = f"{self.base_url}/jobPostings/{job_id}"
             response = requests.patch(url, headers=self.headers, json=updates)
@@ -98,6 +284,10 @@ class LinkedInService:
     
     def close_job_posting(self, job_id: str) -> bool:
         """Close a job posting"""
+        if self.mock_mode:
+            print(f"[MOCK LINKEDIN] Closing job ID: {job_id}")
+            return True
+
         try:
             url = f"{self.base_url}/jobPostings/{job_id}"
             updates = {"status": "CLOSED"}
@@ -116,6 +306,10 @@ class LinkedInService:
     
     def get_job_statistics(self, job_id: str) -> Dict[str, Any]:
         """Get statistics for a job posting"""
+        if self.mock_mode:
+            print(f"[MOCK LINKEDIN] Getting job statistics for job ID: {job_id}")
+            return {"views": 100, "applications": 20, "saves": 5}
+
         try:
             url = f"{self.base_url}/jobPostings/{job_id}/statistics"
             response = requests.get(url, headers=self.headers)
@@ -133,39 +327,4 @@ class LinkedInService:
                 
         except Exception as e:
             print(f"Error getting job statistics: {str(e)}")
-            return {"views": 0, "applications": 0, "saves": 0}
-    
-    def post_job(self, job_data: Dict[str, Any]) -> Optional[str]:
-        """Post a job to LinkedIn"""
-        try:
-            # LinkedIn job posting endpoint
-            url = f"{self.base_url}/jobPostings"
-            
-            # Format job data for LinkedIn API
-            linkedin_job = {
-                "title": job_data["title"],
-                "description": job_data["description"],
-                "location": job_data.get("location", "Remote"),
-                "employmentStatus": "FULL_TIME",
-                "seniorityLevel": "MID_SENIOR",
-                "jobFunctions": ["ENGINEERING"],  # Default, should be customized
-                "salaryInsights": {
-                    "currency": "USD",
-                    "min": job_data["salary_range"]["min"],
-                    "max": job_data["salary_range"]["max"]
-                }
-            }
-            
-            response = requests.post(url, headers=self.headers, json=linkedin_job)
-            
-            if response.status_code == 201:
-                job_id = response.json().get("id")
-                print(f"Job posted successfully with ID: {job_id}")
-                return job_id
-            else:
-                print(f"Failed to post job: {response.status_code} - {response.text}")
-                return None
-                
-        except Exception as e:
-            print(f"Error posting job to LinkedIn: {str(e)}")
-            return None 
+            return {"views": 0, "applications": 0, "saves": 0} 

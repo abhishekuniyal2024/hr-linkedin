@@ -62,8 +62,8 @@ class Candidate(BaseModel):
 class WorkflowState(BaseModel):
     employee_who_quit: Optional[Employee] = None
     job_posting: Optional[JobPosting] = None
-    candidates: List[Candidate] = []
-    selected_candidates: List[Candidate] = []
+    candidates: List[Candidate] = Field(default_factory=list)
+    selected_candidates: List[Candidate] = Field(default_factory=list)
     current_step: str = "start"
     human_approval_needed: bool = False
     approval_pending_content: Optional[str] = None

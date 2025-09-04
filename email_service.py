@@ -11,9 +11,15 @@ class EmailService:
         self.smtp_port = Config.EMAIL_SMTP_PORT
         self.username = Config.EMAIL_USERNAME
         self.password = Config.EMAIL_PASSWORD
+        self.mock_mode = Config.MOCK_EMAIL_MODE  # Add mock mode
     
     def send_email(self, to_email: str, subject: str, body: str) -> bool:
         """Send an email"""
+        if self.mock_mode:
+            print(f"[MOCK EMAIL] To: {to_email}, Subject: {subject}")
+            print(f"[MOCK EMAIL] Body: {body[:200]}...")
+            return True
+        
         try:
             msg = MIMEMultipart()
             msg['From'] = self.username
@@ -92,7 +98,7 @@ class EmailService:
             <h3>Offer Details:</h3>
             <ul>
                 <li><strong>Position:</strong> {job_title}</li>
-                <li><strong>Annual Salary:</strong> ${offer_amount:,.2f}</li>
+                <li><strong>Annual Salary:</strong> ₹{offer_amount:,.2f}</li>
                 <li><strong>Start Date:</strong> To be discussed</li>
             </ul>
             
@@ -133,7 +139,7 @@ class EmailService:
             <h3>Updated Offer Details:</h3>
             <ul>
                 <li><strong>Position:</strong> {job_title}</li>
-                <li><strong>Updated Annual Salary:</strong> ${counter_offer_amount:,.2f}</li>
+                <li><strong>Updated Annual Salary:</strong> ₹{counter_offer_amount:,.2f}</li>
                 <li><strong>Start Date:</strong> To be discussed</li>
             </ul>
             
@@ -216,29 +222,4 @@ class EmailService:
         </html>
         """
         
-        return self.send_email(admin_email, subject, body)
-    
-    def send_email(self, to_email: str, subject: str, body: str) -> bool:
-        """Send an email"""
-        try:
-            msg = MIMEMultipart()
-            msg['From'] = self.username
-            msg['To'] = to_email
-            msg['Subject'] = subject
-            
-            msg.attach(MIMEText(body, 'html'))
-            
-            server = smtplib.SMTP(self.smtp_server, self.smtp_port)
-            server.starttls()
-            server.login(self.username, self.password)
-            
-            text = msg.as_string()
-            server.sendmail(self.username, to_email, text)
-            server.quit()
-            
-            print(f"Email sent successfully to {to_email}")
-            return True
-            
-        except Exception as e:
-            print(f"Error sending email to {to_email}: {str(e)}")
-            return False 
+        return self.send_email(admin_email, subject, body) 

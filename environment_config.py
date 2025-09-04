@@ -13,6 +13,8 @@ GROQ_API_KEY=your_groq_api_key_here
 LINKEDIN_CLIENT_ID=your_linkedin_client_id
 LINKEDIN_CLIENT_SECRET=your_linkedin_client_secret
 LINKEDIN_ACCESS_TOKEN=your_linkedin_access_token
+LINKEDIN_PERSON_URN=urn:li:person:your_linkedin_person_id
+LINKEDIN_POST_MODE=feed  # values: feed, jobs
 
 # Optional: Email SMTP Configuration
 # For Gmail, you may need to use an app password instead of your regular password
@@ -62,6 +64,8 @@ GROQ_API_KEY=your_groq_api_key_here
 LINKEDIN_CLIENT_ID=your_linkedin_client_id
 LINKEDIN_CLIENT_SECRET=your_linkedin_client_secret
 LINKEDIN_ACCESS_TOKEN=your_linkedin_access_token
+LINKEDIN_PERSON_URN=urn:li:person:your_linkedin_person_id
+LINKEDIN_POST_MODE=feed  # values: feed, jobs
 
 # Optional: Email SMTP Configuration
 # For Gmail, you may need to use an app password instead of your regular password

@@ -1,5 +1,5 @@
 from langchain_groq import ChatGroq
-from langchain.schema import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from typing import List, Dict, Any
 import json
 from config import Config
@@ -7,8 +7,8 @@ from config import Config
 class AIService:
     def __init__(self):
         self.llm = ChatGroq(
-            api_key=Config.GROQ_API_KEY,
-            model_name="llama3-70b-8192"
+            groq_api_key=Config.GROQ_API_KEY,
+            model="llama-3.1-8b-instant"
         )
     
     def generate_job_posting(self, employee_data: Dict[str, Any]) -> Dict[str, Any]:
