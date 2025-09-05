@@ -586,12 +586,17 @@ class JobAutomationWorkflow:
             return {"error_message": "No employee data provided"}
 
         emp = state.employee_who_quit
+        
+        # Get employee's office location from CSV
+        employee_location = self._get_employee_location(emp.id)
+        
         job_data = self.ai.generate_job_posting({
             "name": emp.name,
             "position": emp.position,
             "department": emp.department,
             "salary": emp.salary,
-            "reason_for_leaving": emp.reason_for_leaving
+            "reason_for_leaving": emp.reason_for_leaving,
+            "location": employee_location
         })
 
         state.job_posting = JobPosting(
@@ -601,10 +606,77 @@ class JobAutomationWorkflow:
             description=job_data["description"],
             requirements=job_data["requirements"],
             salary_range=job_data["salary_range"],
-            location="Remote",
+            location=employee_location,
             status=JobStatus.DRAFT
         )
+        
+        # Display the generated job description
+        self._display_job_description(state)
+        
         return {"job_posting": state.job_posting, "current_step": "job_posting_generated"}
+    
+    def _get_employee_location(self, employee_id: str) -> str:
+        """Get employee's office location from CSV"""
+        try:
+            import csv
+            with open("employees2.csv", mode='r', newline='', encoding='utf-8') as file:
+                reader = csv.DictReader(file)
+                for row in reader:
+                    if row['id'] == employee_id:
+                        return row.get('office_location', 'Remote')
+            return "Remote"  # Default fallback
+        except Exception as e:
+            print(f"Error reading employee location: {e}")
+            return "Remote"
+    
+    def _display_job_description(self, state):
+        """Display the complete job description"""
+        if not state.job_posting:
+            return
+        
+        print("\n" + "="*60)
+        print("📋 GENERATED JOB DESCRIPTION")
+        print("="*60)
+        
+        print(f"\n📝 JOB POSTING DETAILS:")
+        print(f"Title: {state.job_posting.title}")
+        print(f"Department: {state.job_posting.department}")
+        print(f"Salary Range: ₹{state.job_posting.salary_range['min']:,.2f} - ₹{state.job_posting.salary_range['max']:,.2f}")
+        print(f"Location: {state.job_posting.location}")
+        
+        print(f"\n📝 DESCRIPTION:")
+        print(state.job_posting.description)
+        
+        print(f"\n📋 REQUIREMENTS:")
+        for i, req in enumerate(state.job_posting.requirements, 1):
+            print(f"{i}. {req}")
+        
+        # Show employee skills from original data if available
+        if state.employee_who_quit:
+            print(f"\n💼 EMPLOYEE SKILLS (from CSV):")
+            # Try to get skills from the original employee data
+            try:
+                # Read the CSV to get additional employee details
+                import csv
+                with open("employees2.csv", mode='r', newline='', encoding='utf-8') as file:
+                    reader = csv.DictReader(file)
+                    for row in reader:
+                        if row['id'] == state.employee_who_quit.id:
+                            if row.get('skills_required'):
+                                skills = row['skills_required'].split(',')
+                                for skill in skills:
+                                    print(f"  • {skill.strip()}")
+                            
+                            print(f"\n📊 ADDITIONAL INFO:")
+                            print(f"  • Experience Level: {row.get('years_of_experience', 'N/A')} years")
+                            print(f"  • Education: {row.get('education_level', 'N/A')}")
+                            if row.get('certifications'):
+                                print(f"  • Certifications: {row['certifications']}")
+                            if row.get('projects_handled'):
+                                print(f"  • Projects Handled: {row['projects_handled']}")
+                            break
+            except Exception as e:
+                print(f"  (Additional details not available: {e})")
 
     def request_human_approval(self, state: WorkflowState) -> Dict[str, Any]:
         if not state.job_posting:
@@ -641,13 +713,28 @@ class JobAutomationWorkflow:
             "department": state.job_posting.department,
         }
 
+        print(f"\n📱 Posting to LinkedIn...")
         post_id = self.linkedin.post_job(job_data)
+        
         if post_id:
             state.job_posting.linkedin_post_id = post_id
             state.job_posting.status = JobStatus.POSTED
             state.job_posting.posted_at = datetime.now()
+            
+            if self.linkedin.mock_mode:
+                print(f"✅ Mock LinkedIn post created (ID: {post_id})")
+                print(f"   In real mode, this would be posted to your LinkedIn profile")
+            else:
+                print(f"✅ LinkedIn post created successfully! (ID: {post_id})")
+                print(f"   Check your LinkedIn profile to see the post")
+            
             return {"job_posting": state.job_posting, "current_step": "job_posted"}
-        return {"current_step": "post_failed"}
+        else:
+            print(f"❌ Failed to post to LinkedIn")
+            if not self.linkedin.mock_mode:
+                print(f"   This might be due to API permissions or network issues")
+                print(f"   Check your LinkedIn API configuration")
+            return {"current_step": "post_failed"}
 
     def should_continue_after_posting(self, state: WorkflowState) -> str:
         return "continue" if state.job_posting and state.job_posting.status == JobStatus.POSTED else "end"

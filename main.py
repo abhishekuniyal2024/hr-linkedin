@@ -133,6 +133,55 @@ def read_employee_data_from_csv(file_path: str) -> list[dict]:
         print(f"Error reading CSV file: {e}")
     return employees
 
+def display_job_description(state):
+    """Display the complete job description"""
+    if not state.job_posting:
+        return
+    
+    print("\n" + "="*60)
+    print("📋 GENERATED JOB DESCRIPTION")
+    print("="*60)
+    
+    print(f"\n📝 JOB POSTING DETAILS:")
+    print(f"Title: {state.job_posting.title}")
+    print(f"Department: {state.job_posting.department}")
+    print(f"Salary Range: ₹{state.job_posting.salary_range['min']:,.2f} - ₹{state.job_posting.salary_range['max']:,.2f}")
+    print(f"Location: {state.job_posting.location}")
+    
+    print(f"\n📝 DESCRIPTION:")
+    print(state.job_posting.description)
+    
+    print(f"\n📋 REQUIREMENTS:")
+    for i, req in enumerate(state.job_posting.requirements, 1):
+        print(f"{i}. {req}")
+    
+    # Show employee skills from original data if available
+    if state.employee_who_quit:
+        print(f"\n💼 EMPLOYEE SKILLS (from CSV):")
+        # Try to get skills from the original employee data
+        try:
+            # Read the CSV to get additional employee details
+            import csv
+            with open("employees2.csv", mode='r', newline='', encoding='utf-8') as file:
+                reader = csv.DictReader(file)
+                for row in reader:
+                    if row['id'] == state.employee_who_quit.id:
+                        if row.get('skills_required'):
+                            skills = row['skills_required'].split(',')
+                            for skill in skills:
+                                print(f"  • {skill.strip()}")
+                        
+                        print(f"\n📊 ADDITIONAL INFO:")
+                        print(f"  • Experience Level: {row.get('years_of_experience', 'N/A')} years")
+                        print(f"  • Education: {row.get('education_level', 'N/A')}")
+                        if row.get('certifications'):
+                            print(f"  • Certifications: {row['certifications']}")
+                        if row.get('projects_handled'):
+                            print(f"  • Projects Handled: {row['projects_handled']}")
+                        break
+        except Exception as e:
+            print(f"  (Additional details not available: {e})")
+
 def display_workflow_status(state):
     """Display the current status of the workflow"""
     print("\n" + "="*50)
@@ -217,7 +266,7 @@ def main():
     workflow = JobAutomationWorkflow()
     
     # Get employee data from CSV
-    csv_file_path = "employees.csv"
+    csv_file_path = "employees2.csv"
     all_employee_data = read_employee_data_from_csv(csv_file_path)
 
     if not all_employee_data:

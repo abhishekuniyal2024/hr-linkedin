@@ -28,9 +28,10 @@ class AIService:
         - Department: {employee_data['department']}
         - Salary: ${employee_data['salary']:,.2f}
         - Reason for leaving: {employee_data['reason_for_leaving']}
+        - Location: {employee_data.get('location', 'Remote')}
         
         Create a job posting that will attract qualified candidates to replace this employee.
-        Make it compelling and professional.
+        Make it compelling and professional. Use the same location as the employee who left.
         """
         
         messages = [

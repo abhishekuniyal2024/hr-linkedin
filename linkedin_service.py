@@ -11,22 +11,44 @@ class LinkedInService:
             "Authorization": f"Bearer {self.access_token}",
             "Content-Type": "application/json",
             "X-Restli-Protocol-Version": "2.0.0",
+            # Use a stable, active API version
             "LinkedIn-Version": "202405",
             "Content-Language": "en_US"
         }
         self.mock_mode = Config.MOCK_LINKEDIN_MODE # Add mock mode
+        # Config may provide a URN. We'll normalize and also compute both forms.
         self.person_urn = getattr(Config, "LINKEDIN_PERSON_URN", None)
+        self.member_urn = None
         self.post_mode = getattr(Config, "LINKEDIN_POST_MODE", "feed")
 
     def _ensure_person_urn(self) -> Optional[str]:
-        """Ensure we have the author's person URN; fetch from /me if missing."""
-        # Sanitize any configured value; ignore URLs or malformed values
+        """Ensure we have both member and person URNs; fetch from /me if missing.
+
+        LinkedIn posting endpoints expect a member URN in the form
+        "urn:li:member:<id>" when posting as a user profile. If a config
+        mistakenly supplies a person URN ("urn:li:person:<id>") or a placeholder,
+        we normalize/ignore it and resolve the correct member URN via /me.
+        """
+        # Sanitize any configured value; normalize person->member or ignore placeholders/URLs
         if isinstance(self.person_urn, str):
             candidate = self.person_urn.strip()
+            # Ignore placeholder values
+            if "your_linkedin_person_id" in candidate:
+                candidate = ""
+            # If a person URN is provided, convert to member URN
             if candidate.startswith("urn:li:person:"):
-                self.person_urn = candidate
-                return self.person_urn
-            # Ignore if it's a URL or not a proper URN
+                person_id = candidate.split(":")[-1]
+                # Store both forms
+                self.person_urn = f"urn:li:person:{person_id}"
+                self.member_urn = f"urn:li:member:{person_id}"
+                return self.member_urn
+            # Accept valid member URN
+            if candidate.startswith("urn:li:member:"):
+                member_id = candidate.split(":")[-1]
+                self.member_urn = candidate
+                self.person_urn = f"urn:li:person:{member_id}"
+                return self.member_urn
+            # Ignore if it's a URL or not a proper URN to trigger /me resolution
             if "linkedin.com" in candidate or not candidate.startswith("urn:"):
                 self.person_urn = None
         try:
@@ -37,19 +59,19 @@ class LinkedInService:
             })
             if resp.status_code == 200:
                 data = resp.json()
-                # Prefer explicit URN if present
+                # Prefer explicit URN if present (normalize to member)
                 urn = data.get("urn") or data.get("entityUrn")
                 if isinstance(urn, str) and urn.startswith("urn:li:person:"):
-                    self.person_urn = urn
-                    return self.person_urn
-                # Fallback to id and normalize
+                    person_id = urn.split(":")[-1]
+                    self.person_urn = f"urn:li:person:{person_id}"
+                    self.member_urn = f"urn:li:member:{person_id}"
+                    return self.member_urn
+                # Fallback to id and normalize to member URN
                 person_id = data.get("id")
                 if isinstance(person_id, str):
-                    if person_id.startswith("urn:li:person:"):
-                        self.person_urn = person_id
-                    else:
-                        self.person_urn = f"urn:li:person:{person_id}"
-                    return self.person_urn
+                    self.person_urn = f"urn:li:person:{person_id}"
+                    self.member_urn = f"urn:li:member:{person_id}"
+                    return self.member_urn
             else:
                 print(f"Failed to fetch LinkedIn profile: {resp.status_code} - {resp.text}")
         except Exception as e:
@@ -69,6 +91,8 @@ class LinkedInService:
                 print("UGC post failed; attempting fallback via /rest/posts...")
                 return self._post_job_via_rest_posts(job_data)
             return result
+        elif self.post_mode == "rest":
+            return self._post_job_via_rest_posts(job_data)
         else:
             return self._post_job_via_jobs_api(job_data)
 
@@ -77,8 +101,8 @@ class LinkedInService:
         if not self._ensure_person_urn():
             print("LinkedIn profile not resolved. Ensure your token is valid and has w_member_social.")
             return None
-        # Always use the resolved profile URN from the token to avoid ACCESS_DENIED on author
-        author_urn = self.person_urn
+        # UGC requires a person URN when posting as a member profile
+        author_urn = self.person_urn or self.member_urn
         print(f"Using LinkedIn author URN: {author_urn}")
 
         try:
@@ -135,14 +159,15 @@ class LinkedInService:
             print("LinkedIn profile not resolved. Ensure your token is valid and has w_member_social.")
             return None
 
-        author_urn = self.person_urn
+        # REST Posts API accepts member/person; prefer member
+        author_urn = self.member_urn or self.person_urn
         print(f"Using LinkedIn author URN (REST): {author_urn}")
 
         try:
             url = "https://api.linkedin.com/rest/posts"
-            # Use a headers copy without LinkedIn-Version to avoid NONEXISTENT_VERSION errors
+            # Explicitly set a valid LinkedIn-Version
             rest_headers = dict(self.headers)
-            rest_headers.pop("LinkedIn-Version", None)
+            rest_headers["LinkedIn-Version"] = "202405"
 
             title = job_data.get("title", "New Job Opportunity")
             location = job_data.get("location", "Remote")
