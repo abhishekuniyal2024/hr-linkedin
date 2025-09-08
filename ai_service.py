@@ -8,7 +8,8 @@ class AIService:
     def __init__(self):
         self.llm = ChatGroq(
             groq_api_key=Config.GROQ_API_KEY,
-            model="llama-3.1-8b-instant"
+            model="llama-3.3-70b-versatile"
+            # model="llama-3.1-8b-instant"
         )
     
     def generate_job_posting(self, employee_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -148,8 +149,20 @@ class AIService:
         ]
 
         response = self.llm.invoke(messages)
+        raw = response.content or ""
+        # Remove common code fences like ```json ... ```
+        if raw.lstrip().startswith("```"):
+            stripped = raw.strip()
+            # remove leading ```json or ``` and trailing ```
+            if stripped.startswith("```json"):
+                stripped = stripped[len("```json"):]
+            elif stripped.startswith("```"):
+                stripped = stripped[len("```"):]
+            if stripped.endswith("```"):
+                stripped = stripped[:-3]
+            raw = stripped.strip()
         try:
-            data = json.loads(response.content)
+            data = json.loads(raw)
         except Exception:
             data = {"score": 0, "matched": [], "missing": requirements}
         return data

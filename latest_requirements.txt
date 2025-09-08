@@ -1,11 +1,10 @@
-Machine learning model development
-Python
-TensorFlow or PyTorch
-Data pipelines (ETL) and data engineering
-MLOps (CI/CD for ML, model deployment)
-Cloud experience (AWS or GCP or Azure)
-Docker and Kubernetes
-SQL and data analysis
-Version control (Git) and Agile practices
-Strong communication and collaboration
-
+python
+tensorflow
+pytorch
+mlops
+aws
+gcp
+kubernetes
+sql
+etl
+data pipelines

@@ -30,15 +30,21 @@ def run_inbox_scan():
     if not resumes:
         print("No new resumes found.")
         return
+    summary_rows = []
     for r in resumes:
         text = r.get('text', '') or ''
         scoring = ai.score_resume_against_requirements(text, requirements)
-        preview = (text[:160] + '…') if len(text) > 160 else text
-        print(f"Processed: {r['filename']} from {r['from_email']} — ATS Score: {scoring.get('score', 0)}")
-        print(f"  Extracted text length: {len(text)}")
-        if preview:
-            print(f"  Text preview: {preview.replace('\n',' ') }")
-        print(f"  Using {len(requirements)} requirements: {', '.join(requirements[:6])}{'…' if len(requirements)>6 else ''}")
+        summary_rows.append({
+            'candidate': r['from_email'],
+            'file': r['filename'],
+            'score': scoring.get('score', 0),
+            'matched': ", ".join(scoring.get('matched', [])[:6]),
+            'missing': ", ".join(scoring.get('missing', [])[:6]),
+        })
+    # Print compact summary
+    print("\nATS Summary (new resumes):")
+    for row in summary_rows:
+        print(f"- {row['candidate']} | {row['file']} | Score: {row['score']} | Matched: {row['matched']} | Missing: {row['missing']}")
 
 
 def main():
