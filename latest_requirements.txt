@@ -1,10 +1,4 @@
-python
-tensorflow
-pytorch
-mlops
-aws
-gcp
-kubernetes
-sql
-etl
-data pipelines
+Experience in Analytics
+Strong communication skills
+Team collaboration
+Problem-solving mindset

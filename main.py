@@ -162,7 +162,7 @@ def display_job_description(state):
         try:
             # Read the CSV to get additional employee details
             import csv
-            with open("employees2.csv", mode='r', newline='', encoding='utf-8') as file:
+            with open("employees.csv", mode='r', newline='', encoding='utf-8') as file:
                 reader = csv.DictReader(file)
                 for row in reader:
                     if row['id'] == state.employee_who_quit.id:
@@ -266,7 +266,7 @@ def main():
     workflow = JobAutomationWorkflow()
     
     # Get employee data from CSV
-    csv_file_path = "employees2.csv"
+    csv_file_path = "employees.csv"
     all_employee_data = read_employee_data_from_csv(csv_file_path)
 
     if not all_employee_data:

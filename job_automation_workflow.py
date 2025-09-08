@@ -609,6 +609,15 @@ class JobAutomationWorkflow:
             location=employee_location,
             status=JobStatus.DRAFT
         )
+        # Persist latest requirements so the inbox watcher scores resumes against the posted JD
+        try:
+            from pathlib import Path
+            req_path = Path('latest_requirements.txt')
+            lines = [str(r).strip() for r in state.job_posting.requirements if str(r).strip()]
+            if lines:
+                req_path.write_text("\n".join(lines) + "\n", encoding='utf-8')
+        except Exception as _persist_err:
+            print(f"Warning: could not write latest_requirements.txt: {_persist_err}")
         
         # Display the generated job description
         self._display_job_description(state)
