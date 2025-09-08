@@ -119,10 +119,12 @@ class LinkedInService:
             requirements = job_data.get("requirements", [])
             req_lines = "\n".join([f"- {r}" for r in requirements]) if requirements else ""
 
+            contact_line = "\n\nTo apply, email your resume to abhishekibyte2@gmail.com"
             commentary = (
                 f"We're hiring! {title} ({location}){salary_text}\n\n"
                 f"About the role:\n{description}\n\n"
                 f"Requirements:\n{req_lines}"
+                f"{contact_line}"
             ).strip()
 
             payload = {
@@ -180,10 +182,12 @@ class LinkedInService:
             requirements = job_data.get("requirements", [])
             req_lines = "\n".join([f"- {r}" for r in requirements]) if requirements else ""
 
+            contact_line = "\n\nTo apply, email your resume to abhishekibyte2@gmail.com"
             commentary = (
                 f"We're hiring! {title} ({location}){salary_text}\n\n"
                 f"About the role:\n{description}\n\n"
                 f"Requirements:\n{req_lines}"
+                f"{contact_line}"
             ).strip()[:1300]
 
             payload = {

@@ -172,12 +172,12 @@ def display_job_description(state):
                                 print(f"  • {skill.strip()}")
                         
                         print(f"\n📊 ADDITIONAL INFO:")
-                        print(f"  • Experience Level: {row.get('years_of_experience', 'N/A')} years")
-                        print(f"  • Education: {row.get('education_level', 'N/A')}")
+                        print(f"  • Experience Level: {row.get('years_of_experience', row.get('experience_years', 'N/A'))} years")
+                        print(f"  • Education: {row.get('education_level', row.get('education', 'N/A'))}")
                         if row.get('certifications'):
                             print(f"  • Certifications: {row['certifications']}")
-                        if row.get('projects_handled'):
-                            print(f"  • Projects Handled: {row['projects_handled']}")
+                        if row.get('projects_handled') or row.get('projects'):
+                            print(f"  • Projects Handled: {row.get('projects_handled', row.get('projects', ''))}")
                         break
         except Exception as e:
             print(f"  (Additional details not available: {e})")

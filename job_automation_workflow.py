@@ -628,7 +628,7 @@ class JobAutomationWorkflow:
         """Get employee's office location from CSV"""
         try:
             import csv
-            with open("employees2.csv", mode='r', newline='', encoding='utf-8') as file:
+            with open("employees.csv", mode='r', newline='', encoding='utf-8') as file:
                 reader = csv.DictReader(file)
                 for row in reader:
                     if row['id'] == employee_id:
@@ -667,7 +667,7 @@ class JobAutomationWorkflow:
             try:
                 # Read the CSV to get additional employee details
                 import csv
-                with open("employees2.csv", mode='r', newline='', encoding='utf-8') as file:
+                with open("employees.csv", mode='r', newline='', encoding='utf-8') as file:
                     reader = csv.DictReader(file)
                     for row in reader:
                         if row['id'] == state.employee_who_quit.id:
@@ -691,20 +691,8 @@ class JobAutomationWorkflow:
         if not state.job_posting:
             return {"error_message": "No job posting to approve"}
 
-        content = f"""
-        Job Title: {state.job_posting.title}
-        Department: {state.job_posting.department}
-        Salary: ₹{state.job_posting.salary_range['min']} - ₹{state.job_posting.salary_range['max']}
-
-        Description:
-        {state.job_posting.description}
-
-        Requirements:
-        {chr(10).join("- " + r for r in state.job_posting.requirements)}
-        """
-
-        self.email.send_email("hr@company.com", "Job Posting Approval Required", content)
-        return {"human_approval_needed": True, "approval_pending_content": content, "current_step": "awaiting_approval"}
+        # Skip sending approval emails; proceed without human approval in this streamlined flow
+        return {"human_approval_needed": False, "approval_pending_content": "", "current_step": "awaiting_approval"}
 
     def should_skip_approval(self, _: WorkflowState) -> str:
         return "skip"  # Auto-skip in demo
@@ -746,7 +734,8 @@ class JobAutomationWorkflow:
             return {"current_step": "post_failed"}
 
     def should_continue_after_posting(self, state: WorkflowState) -> str:
-        return "continue" if state.job_posting and state.job_posting.status == JobStatus.POSTED else "end"
+        # Stop the workflow after posting the JD to LinkedIn
+        return "end"
 
     def check_applicants(self, state: WorkflowState) -> Dict[str, Any]:
         if not state.job_posting or not state.job_posting.linkedin_post_id:
