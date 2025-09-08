@@ -12,26 +12,36 @@ class AIService:
         )
     
     def generate_job_posting(self, employee_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate a job posting based on the employee who quit"""
-        
-        system_prompt = """You are an expert HR professional who creates compelling job postings. 
-        Create a detailed job posting that will attract qualified candidates. 
-        Include a compelling title, detailed description, requirements, and salary range.
-        Return the response as a JSON object with keys: title, description, requirements (list), salary_range (dict with min and max)."""
+        """Generate a job posting based on the employee who quit.
+
+        Output constraints:
+        - description must be human-written prose (no code fences/backticks, no braces, no JSON formatting words)
+        - requirements must be a simple list of short bullet phrases
+        - still return a JSON envelope with keys: title, description, requirements, salary_range
+        """
+
+        system_prompt = (
+            "You are an expert HR professional who writes engaging, human-friendly job descriptions. "
+            "Produce a valid JSON object with keys: title (string), description (string), requirements (array of strings), "
+            "salary_range (object with numeric min and max). The description must be clean prose suitable for LinkedIn, "
+            "and must NOT contain code fences, backticks, or JSON/braces. Requirements should be concise bullet phrases."
+        )
         
         human_prompt = f"""
-        Create a job posting for a position that was vacated by an employee who quit.
-        
+        Create a job posting for a replacement hire.
+
         Employee details:
         - Name: {employee_data['name']}
         - Position: {employee_data['position']}
         - Department: {employee_data['department']}
-        - Salary: ${employee_data['salary']:,.2f}
+        - Current Salary: ${employee_data['salary']:,.2f}
         - Reason for leaving: {employee_data['reason_for_leaving']}
         - Location: {employee_data.get('location', 'Remote')}
-        
-        Create a job posting that will attract qualified candidates to replace this employee.
-        Make it compelling and professional. Use the same location as the employee who left.
+
+        Style & constraints:
+        - Write like a human recruiter (no code blocks/backticks, no JSON/braces in description).
+        - Requirements must be short bullet phrases (no numbering or punctuation noise).
+        - Keep it concise and impactful.
         """
         
         messages = [
@@ -42,26 +52,40 @@ class AIService:
         response = self.llm.invoke(messages)
         
         try:
-            # Try to parse as JSON
             job_data = json.loads(response.content)
         except json.JSONDecodeError:
-            # If not JSON, create a structured response
             job_data = {
                 "title": f"{employee_data['position']} - {employee_data['department']}",
-                "description": response.content,
+                "description": self._clean_text(response.content),
                 "requirements": [
                     f"Experience in {employee_data['department']}",
                     "Strong communication skills",
-                    "Team player",
-                    "Problem-solving abilities"
+                    "Team collaboration",
+                    "Problem-solving mindset"
                 ],
                 "salary_range": {
-                    "min": employee_data['salary'] * 0.9,
-                    "max": employee_data['salary'] * 1.2
+                    "min": round(employee_data['salary'] * 0.9),
+                    "max": round(employee_data['salary'] * 1.2)
                 }
             }
-        
+
+        # Sanitize fields to ensure human-readable output
+        job_data["description"] = self._clean_text(job_data.get("description", "")).strip()
+        if isinstance(job_data.get("requirements"), list):
+            job_data["requirements"] = [self._clean_text(str(r)).strip("- *• ") for r in job_data["requirements"] if str(r).strip()]
+
         return job_data
+
+    def _clean_text(self, text: str) -> str:
+        """Remove code fences/backticks and obvious JSON/braces artifacts from LLM output."""
+        if not text:
+            return ""
+        cleaned = str(text)
+        for fence in ("```json", "```", "`"):
+            cleaned = cleaned.replace(fence, "")
+        cleaned = cleaned.replace("{", " ").replace("}", " ")
+        cleaned = cleaned.replace("[", " ").replace("]", " ")
+        return " ".join(cleaned.split())
     
     def analyze_candidates(self, candidates: List[Dict[str, Any]], job_requirements: List[str]) -> List[Dict[str, Any]]:
         """Analyze candidates and rank them based on job requirements"""
@@ -101,6 +125,34 @@ class AIService:
             ]
         
         return rankings
+
+    def score_resume_against_requirements(self, resume_text: str, requirements: List[str]) -> Dict[str, Any]:
+        """Compute a simple ATS-style score using the LLM for rubric-based evaluation."""
+        system_prompt = (
+            "You are an expert ATS evaluator. Score a resume against job requirements. "
+            "Return JSON with: score (0-100), matched (array of requirements matched), missing (array)."
+        )
+
+        req_lines = "\n".join([f"- {r}" for r in requirements])
+        human_prompt = f"""
+        Requirements:\n{req_lines}
+
+        Resume Text:\n{resume_text[:6000]}
+
+        Evaluate strictly and be concise.
+        """
+
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=human_prompt)
+        ]
+
+        response = self.llm.invoke(messages)
+        try:
+            data = json.loads(response.content)
+        except Exception:
+            data = {"score": 0, "matched": [], "missing": requirements}
+        return data
     
     def generate_interview_questions(self, candidate: Dict[str, Any], job_requirements: List[str]) -> List[str]:
         """Generate interview questions based on candidate profile and job requirements"""

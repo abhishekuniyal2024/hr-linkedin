@@ -4,6 +4,13 @@ from email.mime.multipart import MIMEMultipart
 from typing import Dict, Any, List
 from datetime import datetime, timedelta
 from config import Config
+import imaplib
+import email
+import os
+from pypdf import PdfReader
+import pypdfium2 as pdfium
+import pytesseract
+from PIL import Image
 
 class EmailService:
     def __init__(self):
@@ -12,6 +19,7 @@ class EmailService:
         self.username = Config.EMAIL_USERNAME
         self.password = Config.EMAIL_PASSWORD
         self.mock_mode = Config.MOCK_EMAIL_MODE  # Add mock mode
+        self.imap_host = getattr(Config, 'GMAIL_IMAP_HOST', 'imap.gmail.com')
     
     def send_email(self, to_email: str, subject: str, body: str) -> bool:
         """Send an email"""
@@ -223,3 +231,84 @@ class EmailService:
         """
         
         return self.send_email(admin_email, subject, body) 
+
+    # ==============================
+    # IMAP Resume Processing
+    # ==============================
+    def _extract_pdf_text(self, file_path: str) -> str:
+        try:
+            reader = PdfReader(file_path)
+            parts: List[str] = []
+            for page in reader.pages:
+                parts.append(page.extract_text() or "")
+            text = "\n".join(parts).strip()
+            if text:
+                return text
+        except Exception:
+            pass
+        # OCR fallback for scanned PDFs
+        try:
+            pdf = pdfium.PdfDocument(file_path)
+            ocr_parts: List[str] = []
+            for i in range(len(pdf)):
+                page = pdf.get_page(i)
+                pil_image = page.render(scale=2).to_pil()
+                ocr_text = pytesseract.image_to_string(pil_image)
+                if ocr_text:
+                    ocr_parts.append(ocr_text)
+            return "\n".join(ocr_parts)
+        except Exception:
+            return ""
+
+    def fetch_resumes_from_inbox(self, since_uid: str | None = None) -> List[Dict[str, Any]]:
+        """Fetch unread emails with PDF attachments and return parsed resumes.
+
+        Returns list of {from_email, subject, filename, text}
+        """
+        results: List[Dict[str, Any]] = []
+        try:
+            mail = imaplib.IMAP4_SSL(self.imap_host)
+            mail.login(self.username, self.password)
+            mail.select('inbox')
+
+            status, data = mail.search(None, '(UNSEEN)')
+            if status != 'OK':
+                mail.logout()
+                return results
+
+            for num in data[0].split():
+                status, msg_data = mail.fetch(num, '(RFC822)')
+                if status != 'OK':
+                    continue
+                msg = email.message_from_bytes(msg_data[0][1])
+                from_email = email.utils.parseaddr(msg.get('From'))[1]
+                subject = msg.get('Subject', '')
+
+                for part in msg.walk():
+                    if part.get_content_maintype() == 'multipart':
+                        continue
+                    if part.get('Content-Disposition') is None:
+                        continue
+                    filename = part.get_filename()
+                    if not filename or not filename.lower().endswith('.pdf'):
+                        continue
+                    payload = part.get_payload(decode=True)
+                    if not payload:
+                        continue
+                    os.makedirs('inbox_resumes', exist_ok=True)
+                    file_path = os.path.join('inbox_resumes', filename)
+                    with open(file_path, 'wb') as f:
+                        f.write(payload)
+                    text = self._extract_pdf_text(file_path)
+                    results.append({
+                        'from_email': from_email,
+                        'subject': subject,
+                        'filename': filename,
+                        'file_path': file_path,
+                        'text': text,
+                    })
+
+            mail.logout()
+        except Exception as e:
+            print(f"Error fetching resumes: {e}")
+        return results
