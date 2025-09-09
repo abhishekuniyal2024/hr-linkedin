@@ -694,6 +694,90 @@ class JobAutomationWorkflow:
         # Skip sending approval emails; proceed without human approval in this streamlined flow
         return {"human_approval_needed": False, "approval_pending_content": "", "current_step": "awaiting_approval"}
 
+    # ============================================================
+    # Agentic subgraph: Resume Intake (LangGraph)
+    # ============================================================
+    def run_resume_intake_graph_once(self):
+        """Run a lightweight LangGraph subgraph to process inbox resumes using latest JD requirements."""
+        try:
+            from langgraph.graph import StateGraph, END
+        except Exception:
+            print("LangGraph not available; cannot run resume intake graph.")
+            return
+
+        from pathlib import Path
+        from ai_service import AIService
+        from email_service import EmailService
+
+        # Simple dict-based state
+        def load_requirements(state: dict) -> dict:
+            reqs: list[str] = []
+            p = Path('latest_requirements.txt')
+            if p.exists():
+                reqs = [line.strip() for line in p.read_text(encoding='utf-8').splitlines() if line.strip()]
+            state['requirements'] = reqs
+            return state
+
+        def fetch_resumes(state: dict) -> dict:
+            email_svc = EmailService()
+            resumes = email_svc.fetch_resumes_from_inbox()
+            state['resumes'] = resumes or []
+            return state
+
+        def score_resumes(state: dict) -> dict:
+            ai = AIService()
+            requirements = state.get('requirements', [])
+            summaries: list[dict] = []
+            for r in state.get('resumes', []):
+                text = r.get('text', '') or ''
+                scoring = ai.score_resume_against_requirements(text, requirements)
+                breakdown = scoring.get('breakdown', {})
+                summaries.append({
+                    'candidate': r.get('from_email', ''),
+                    'file': r.get('filename', ''),
+                    'score': scoring.get('score', 0),
+                    'matched': ", ".join(scoring.get('matched', [])[:4]),
+                    'missing': ", ".join(scoring.get('missing', [])[:4]),
+                    'breakdown': breakdown,
+                })
+            state['summaries'] = summaries
+            return state
+
+        def output_summaries(state: dict) -> dict:
+            summaries = state.get('summaries', [])
+            if not summaries:
+                print("No new resumes found.")
+                return state
+            print("\n📊 ATS Summary (new resumes):")
+            for row in summaries:
+                print(f"\n👤 {row['candidate']} | 📄 {row['file']}")
+                print(f"   🎯 Overall Score: {row['score']}/100")
+                br = row.get('breakdown', {})
+                if br:
+                    print(f"   📝 Keywords: {br.get('keywords', 0)}/30")
+                    print(f"   🛠️  Skills: {br.get('skills', 0)}/25")
+                    print(f"   💼 Experience: {br.get('experience', 0)}/20")
+                    print(f"   🎓 Education: {br.get('education', 0)}/15")
+                    print(f"   📋 Format: {br.get('format', 0)}/10")
+                print(f"   ✅ Matched: {row.get('matched', '')}")
+                print(f"   ❌ Missing: {row.get('missing', '')}")
+            return state
+
+        graph = StateGraph(dict)
+        graph.add_node('load_requirements', load_requirements)
+        graph.add_node('fetch_resumes', fetch_resumes)
+        graph.add_node('score_resumes', score_resumes)
+        graph.add_node('output_summaries', output_summaries)
+
+        graph.set_entry_point('load_requirements')
+        graph.add_edge('load_requirements', 'fetch_resumes')
+        graph.add_edge('fetch_resumes', 'score_resumes')
+        graph.add_edge('score_resumes', 'output_summaries')
+        graph.add_edge('output_summaries', END)
+
+        app = graph.compile()
+        app.invoke({})
+
     def should_skip_approval(self, _: WorkflowState) -> str:
         return "skip"  # Auto-skip in demo
 
