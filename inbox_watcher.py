@@ -34,17 +34,28 @@ def run_inbox_scan():
     for r in resumes:
         text = r.get('text', '') or ''
         scoring = ai.score_resume_against_requirements(text, requirements)
+        breakdown = scoring.get('breakdown', {})
         summary_rows.append({
             'candidate': r['from_email'],
             'file': r['filename'],
             'score': scoring.get('score', 0),
-            'matched': ", ".join(scoring.get('matched', [])[:6]),
-            'missing': ", ".join(scoring.get('missing', [])[:6]),
+            'matched': ", ".join(scoring.get('matched', [])[:4]),
+            'missing': ", ".join(scoring.get('missing', [])[:4]),
+            'breakdown': breakdown
         })
-    # Print compact summary
-    print("\nATS Summary (new resumes):")
+    # Print detailed summary with scoring breakdown
+    print("\n📊 ATS Summary (new resumes):")
     for row in summary_rows:
-        print(f"- {row['candidate']} | {row['file']} | Score: {row['score']} | Matched: {row['matched']} | Missing: {row['missing']}")
+        print(f"\n👤 {row['candidate']} | 📄 {row['file']}")
+        print(f"   🎯 Overall Score: {row['score']}/100")
+        if row['breakdown']:
+            print(f"   📝 Keywords: {row['breakdown'].get('keywords', 0)}/30")
+            print(f"   🛠️  Skills: {row['breakdown'].get('skills', 0)}/25")
+            print(f"   💼 Experience: {row['breakdown'].get('experience', 0)}/20")
+            print(f"   🎓 Education: {row['breakdown'].get('education', 0)}/15")
+            print(f"   📋 Format: {row['breakdown'].get('format', 0)}/10")
+        print(f"   ✅ Matched: {row['matched']}")
+        print(f"   ❌ Missing: {row['missing']}")
 
 
 def main():

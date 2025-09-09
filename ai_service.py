@@ -51,16 +51,30 @@ class AIService:
         ]
         
         response = self.llm.invoke(messages)
+        print(f"[DEBUG] Raw LLM response: {response.content[:500]}...")
         
         try:
-            job_data = json.loads(response.content)
+            # Clean the response content first to remove any code fences
+            cleaned_content = response.content
+            if cleaned_content.lstrip().startswith("```"):
+                stripped = cleaned_content.strip()
+                if stripped.startswith("```json"):
+                    stripped = stripped[len("```json"):]
+                elif stripped.startswith("```"):
+                    stripped = stripped[len("```"):]
+                if stripped.endswith("```"):
+                    stripped = stripped[:-3]
+                cleaned_content = stripped.strip()
+            
+            job_data = json.loads(cleaned_content)
         except json.JSONDecodeError:
+            # Fallback: create structured data from the response
             job_data = {
                 "title": f"{employee_data['position']} - {employee_data['department']}",
                 "description": self._clean_text(response.content),
                 "requirements": [
                     f"Experience in {employee_data['department']}",
-                    "Strong communication skills",
+                    "Strong communication skills", 
                     "Team collaboration",
                     "Problem-solving mindset"
                 ],
@@ -128,19 +142,42 @@ class AIService:
         return rankings
 
     def score_resume_against_requirements(self, resume_text: str, requirements: List[str]) -> Dict[str, Any]:
-        """Compute a simple ATS-style score using the LLM for rubric-based evaluation."""
+        """Compute comprehensive ATS score using the LLM based on specific scoring factors."""
         system_prompt = (
-            "You are an expert ATS evaluator. Score a resume against job requirements. "
-            "Return JSON with: score (0-100), matched (array of requirements matched), missing (array)."
+            "You are an expert ATS evaluator. You MUST score resumes using this exact rubric:\n\n"
+            "SCORING RUBRIC (Total: 100 points):\n"
+            "1. Keywords (30 points) - Look for job-specific terms, technologies, methodologies mentioned in requirements\n"
+            "2. Skills Match (25 points) - Technical skills and competencies that align with job requirements\n"
+            "3. Experience Level (20 points) - Years of relevant experience (give points even for 1+ years)\n"
+            "4. Education (15 points) - Degrees, certifications, training relevant to the field\n"
+            "5. Format Quality (10 points) - Resume structure, clarity, professional presentation\n\n"
+            "IMPORTANT: You MUST give points where applicable. Do not return all zeros unless the resume is completely irrelevant.\n"
+            "Even a basic resume should get some points for format (5-10) and basic skills.\n\n"
+            "Return ONLY valid JSON with these exact keys: score (0-100), matched (array), missing (array), "
+            "breakdown (object with: keywords, skills, experience, education, format - each 0-30/25/20/15/10 respectively)."
         )
 
         req_lines = "\n".join([f"- {r}" for r in requirements])
         human_prompt = f"""
-        Requirements:\n{req_lines}
+        JOB REQUIREMENTS:
+        {req_lines}
 
-        Resume Text:\n{resume_text[:6000]}
+        RESUME TEXT:
+        {resume_text[:6000]}
 
-        Evaluate strictly and be concise.
+        EVALUATION INSTRUCTIONS:
+        1. Keywords (30 pts): Find terms from requirements in the resume
+        2. Skills (25 pts): Match technical skills mentioned in resume to requirements  
+        3. Experience (20 pts): Award points for any work experience (1+ years = 10+ points)
+        4. Education (15 pts): Award points for degrees, certifications, training
+        5. Format (10 pts): Award points for professional structure and clarity
+
+        EXAMPLES:
+        - Resume with Python, Django, 2 years experience, Bachelor's degree = 60-80 points
+        - Resume with basic skills, 1 year experience, some education = 40-60 points
+        - Resume with no relevant skills but good format = 10-20 points
+
+        Return JSON only, no explanations.
         """
 
         messages = [
@@ -150,6 +187,7 @@ class AIService:
 
         response = self.llm.invoke(messages)
         raw = response.content or ""
+        
         # Remove common code fences like ```json ... ```
         if raw.lstrip().startswith("```"):
             stripped = raw.strip()
@@ -161,10 +199,31 @@ class AIService:
             if stripped.endswith("```"):
                 stripped = stripped[:-3]
             raw = stripped.strip()
+        
         try:
             data = json.loads(raw)
+            # Ensure breakdown exists with default values
+            if "breakdown" not in data:
+                data["breakdown"] = {
+                    "keywords": 0,
+                    "skills": 0,
+                    "experience": 0,
+                    "education": 0,
+                    "format": 0
+                }
         except Exception:
-            data = {"score": 0, "matched": [], "missing": requirements}
+            data = {
+                "score": 0, 
+                "matched": [], 
+                "missing": requirements,
+                "breakdown": {
+                    "keywords": 0,
+                    "skills": 0,
+                    "experience": 0,
+                    "education": 0,
+                    "format": 0
+                }
+            }
         return data
     
     def generate_interview_questions(self, candidate: Dict[str, Any], job_requirements: List[str]) -> List[str]:
