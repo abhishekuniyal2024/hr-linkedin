@@ -761,6 +761,84 @@ class JobAutomationWorkflow:
                     print(f"   📋 Format: {br.get('format', 0)}/10")
                 print(f"   ✅ Matched: {row.get('matched', '')}")
                 print(f"   ❌ Missing: {row.get('missing', '')}")
+
+            # Email notifications: invite top 3 by score OR anyone with score >= 80; reject others
+            try:
+                notifier = EmailService()
+                # Sort by score descending
+                ordered = sorted(summaries, key=lambda r: r.get('score', 0), reverse=True)
+                top_three_emails = {r.get('candidate') for r in ordered[:3] if r.get('candidate')}
+                high_scorers = {r.get('candidate') for r in ordered if r.get('score', 0) >= 80 and r.get('candidate')}
+                invitees = top_three_emails.union(high_scorers)
+
+                job_title = "Interview - Current Opening"
+                # Send interview scheduling emails to invitees
+                for r in summaries:
+                    to_email = r.get('candidate') or ""
+                    if not to_email:
+                        continue
+                    if to_email in invitees:
+                        subject = f"Interview Scheduling - {job_title}"
+                        body = (
+                            f"<html><body>"
+                            f"<p>Dear Candidate,</p>"
+                            f"<p>Congratulations! Based on your profile (ATS score: <strong>{r.get('score', 0)}/100</strong>), "
+                            f"we would like to invite you to the next stage.</p>"
+                            f"<p>Please reply with your availability (two to three time slots) over the next 3 business days, "
+                            f"and we will confirm the interview time and date.</p>"
+                            f"<p>Best regards,<br>Hiring Team</p>"
+                            f"</body></html>"
+                        )
+                        notifier.send_email(to_email, subject, body)
+
+                # Send rejection emails to the rest
+                for r in summaries:
+                    to_email = r.get('candidate') or ""
+                    if not to_email or to_email in invitees:
+                        continue
+                    subject = f"Application Update - {job_title}"
+                    body = (
+                        f"<html><body>"
+                        f"<p>Dear Candidate,</p>"
+                        f"<p>Thank you for applying. After review (ATS score: <strong>{r.get('score', 0)}/100</strong>), "
+                        f"we will not be moving forward at this time. We appreciate your interest and encourage you to apply for future roles.</p>"
+                        f"<p>Best regards,<br>Hiring Team</p>"
+                        f"</body></html>"
+                    )
+                    notifier.send_email(to_email, subject, body)
+            except Exception as notify_err:
+                print(f"Warning: Failed to send notifications: {notify_err}")
+            return state
+
+        # Optional: handle candidate replies proposing time slots
+        def handle_candidate_replies(state: dict) -> dict:
+            try:
+                from ai_service import AIService
+                from email_service import EmailService
+                ai = AIService()
+                mailer = EmailService()
+                replies = mailer.fetch_interview_replies()
+                if not replies:
+                    return state
+                from datetime import datetime
+                from dateutil import parser as date_parser  # requires python-dateutil
+                for m in replies:
+                    body = m.get('body', '')
+                    sender = m.get('from_email', '')
+                    slots = ai.extract_meeting_slots(body)
+                    confirmed = None
+                    for s in slots:
+                        try:
+                            dt = date_parser.parse(s)
+                            if dt > datetime.now():
+                                confirmed = dt.isoformat(timespec='minutes')
+                                break
+                        except Exception:
+                            continue
+                    if confirmed and sender:
+                        mailer.send_confirmation_email(sender, confirmed)
+            except Exception as _err:
+                print(f"Warning: Failed to handle candidate replies: {_err}")
             return state
 
         graph = StateGraph(dict)
@@ -768,12 +846,14 @@ class JobAutomationWorkflow:
         graph.add_node('fetch_resumes', fetch_resumes)
         graph.add_node('score_resumes', score_resumes)
         graph.add_node('output_summaries', output_summaries)
+        graph.add_node('handle_candidate_replies', handle_candidate_replies)
 
         graph.set_entry_point('load_requirements')
         graph.add_edge('load_requirements', 'fetch_resumes')
         graph.add_edge('fetch_resumes', 'score_resumes')
         graph.add_edge('score_resumes', 'output_summaries')
-        graph.add_edge('output_summaries', END)
+        graph.add_edge('output_summaries', 'handle_candidate_replies')
+        graph.add_edge('handle_candidate_replies', END)
 
         app = graph.compile()
         app.invoke({})

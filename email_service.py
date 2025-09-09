@@ -312,3 +312,59 @@ class EmailService:
         except Exception as e:
             print(f"Error fetching resumes: {e}")
         return results
+
+    def fetch_interview_replies(self) -> List[Dict[str, Any]]:
+        """Fetch unread emails that look like replies to interview scheduling.
+
+        Returns: list of {from_email, subject, body}
+        """
+        messages: List[Dict[str, Any]] = []
+        try:
+            mail = imaplib.IMAP4_SSL(self.imap_host)
+            mail.login(self.username, self.password)
+            mail.select('inbox')
+            status, data = mail.search(None, '(UNSEEN)')
+            if status != 'OK':
+                mail.logout()
+                return messages
+            for num in data[0].split():
+                status, msg_data = mail.fetch(num, '(RFC822)')
+                if status != 'OK':
+                    continue
+                msg = email.message_from_bytes(msg_data[0][1])
+                from_email = email.utils.parseaddr(msg.get('From'))[1]
+                subject = msg.get('Subject', '')
+                body_text = ""
+                if msg.is_multipart():
+                    for part in msg.walk():
+                        ctype = part.get_content_type()
+                        if ctype == 'text/plain':
+                            body_text += part.get_payload(decode=True).decode(errors='ignore')
+                else:
+                    body_text = msg.get_payload(decode=True).decode(errors='ignore')
+                messages.append({
+                    'from_email': from_email,
+                    'subject': subject,
+                    'body': body_text.strip(),
+                })
+                # leave unread so the system can re-check if needed, or mark as seen
+                try:
+                    mail.store(num, '+FLAGS', '\\Seen')
+                except Exception:
+                    pass
+            mail.logout()
+        except Exception:
+            return messages
+        return messages
+
+    def send_confirmation_email(self, to_email: str, confirmed_iso: str) -> bool:
+        subject = "Interview Confirmed"
+        body = (
+            f"<html><body>"
+            f"<p>Dear Candidate,</p>"
+            f"<p>Your interview has been scheduled for <strong>{confirmed_iso}</strong>.</p>"
+            f"<p>We look forward to speaking with you.</p>"
+            f"<p>Best regards,<br>Hiring Team</p>"
+            f"</body></html>"
+        )
+        return self.send_email(to_email, subject, body)

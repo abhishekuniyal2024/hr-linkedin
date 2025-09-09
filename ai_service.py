@@ -282,6 +282,47 @@ class AIService:
             ]
         
         return questions
+
+    def extract_meeting_slots(self, email_text: str) -> List[str]:
+        """Extract proposed meeting time slots from a candidate's email.
+
+        Returns a JSON array of ISO 8601 datetimes (no timezone assumptions). Keep at most 5 items.
+        """
+        system_prompt = (
+            "You are a helpful assistant that extracts proposed meeting times from emails. "
+            "Return ONLY valid JSON: an array of ISO 8601 datetimes (YYYY-MM-DDTHH:MM)."
+        )
+        human_prompt = f"""
+        Email body:
+        ---
+        {email_text[:4000]}
+        ---
+
+        Extract up to 5 proposed meeting times as ISO 8601 datetimes (YYYY-MM-DDTHH:MM). If none, return [].
+        """
+
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=human_prompt)
+        ]
+        response = self.llm.invoke(messages)
+        raw = response.content or "[]"
+        if raw.lstrip().startswith("```"):
+            stripped = raw.strip()
+            if stripped.startswith("```json"):
+                stripped = stripped[len("```json"):]
+            elif stripped.startswith("```"):
+                stripped = stripped[len("```"):]
+            if stripped.endswith("```"):
+                stripped = stripped[:-3]
+            raw = stripped.strip()
+        try:
+            data = json.loads(raw)
+            if isinstance(data, list):
+                return [str(x) for x in data][:5]
+        except Exception:
+            pass
+        return []
     
     def generate_salary_offer(self, candidate: Dict[str, Any], job_salary_range: Dict[str, float]) -> Dict[str, Any]:
         """Generate a salary offer based on candidate experience and market rates"""

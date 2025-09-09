@@ -32,7 +32,8 @@ Automated hiring pipeline: Employee departure → JD creation → LinkedIn posti
 - **Output**: Top 5 candidates with ATS scores
 
 ### 5. **Interview Scheduler** 📅
-- Send interview invites to top 5
+- Send interview invites to top 3 OR who score more than 80 in Overall Score. and for rejected
+candidate send them rejection mail. 
 - Collect availability
 - **Output**: Scheduled interviews
 
