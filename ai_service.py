@@ -146,15 +146,21 @@ class AIService:
         system_prompt = (
             "You are an expert ATS evaluator. You MUST score resumes using this exact rubric:\n\n"
             "SCORING RUBRIC (Total: 100 points):\n"
-            "1. Keywords (30 points) - Look for job-specific terms, technologies, methodologies mentioned in requirements\n"
-            "2. Skills Match (25 points) - Technical skills and competencies that align with job requirements\n"
-            "3. Experience Level (20 points) - Years of relevant experience (give points even for 1+ years)\n"
-            "4. Education (15 points) - Degrees, certifications, training relevant to the field\n"
-            "5. Format Quality (10 points) - Resume structure, clarity, professional presentation\n\n"
+            "1. Keywords (MAX 30 points) - Look for job-specific terms, technologies, methodologies mentioned in requirements\n"
+            "2. Skills Match (MAX 25 points) - Technical skills and competencies that align with job requirements\n"
+            "3. Experience Level (MAX 20 points) - Years of relevant experience (give points even for 1+ years)\n"
+            "4. Education (MAX 15 points) - Degrees, certifications, training relevant to the field\n"
+            "5. Format Quality (MAX 10 points) - Resume structure, clarity, professional presentation\n\n"
+            "CRITICAL: Each category has a MAXIMUM limit. Do NOT exceed:\n"
+            "- Keywords: 0-30 points\n"
+            "- Skills: 0-25 points\n"
+            "- Experience: 0-20 points\n"
+            "- Education: 0-15 points\n"
+            "- Format: 0-10 points\n\n"
             "IMPORTANT: You MUST give points where applicable. Do not return all zeros unless the resume is completely irrelevant.\n"
             "Even a basic resume should get some points for format (5-10) and basic skills.\n\n"
             "Return ONLY valid JSON with these exact keys: score (0-100), matched (array), missing (array), "
-            "breakdown (object with: keywords, skills, experience, education, format - each 0-30/25/20/15/10 respectively)."
+            "breakdown (object with: keywords, skills, experience, education, format - each within their MAX limits)."
         )
 
         req_lines = "\n".join([f"- {r}" for r in requirements])
@@ -211,6 +217,19 @@ class AIService:
                     "education": 0,
                     "format": 0
                 }
+            
+            # Validate and cap scores to their maximum limits
+            breakdown = data.get("breakdown", {})
+            breakdown["keywords"] = min(max(breakdown.get("keywords", 0), 0), 30)
+            breakdown["skills"] = min(max(breakdown.get("skills", 0), 0), 25)
+            breakdown["experience"] = min(max(breakdown.get("experience", 0), 0), 20)
+            breakdown["education"] = min(max(breakdown.get("education", 0), 0), 15)
+            breakdown["format"] = min(max(breakdown.get("format", 0), 0), 10)
+            
+            # Recalculate total score based on capped breakdown
+            data["score"] = min(max(sum(breakdown.values()), 0), 100)
+            data["breakdown"] = breakdown
+            
         except Exception:
             data = {
                 "score": 0, 
