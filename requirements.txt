@@ -12,3 +12,8 @@ pypdf>=4.2.0
 pypdfium2>=4.30.0
 pytesseract>=0.3.13
 Pillow>=10.0.0
+
+
+
+# for connecting it with google calander. i have installed this library
+# pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib

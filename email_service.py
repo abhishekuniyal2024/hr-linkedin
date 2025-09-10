@@ -54,41 +54,32 @@ class EmailService:
     def send_interview_invitation(self, candidate: Dict[str, Any], interview_date: datetime, job_title: str) -> bool:
         """Send interview invitation email"""
         subject = f"Interview Invitation - {job_title}"
-        
         body = f"""
         <html>
         <body>
             <h2>Interview Invitation</h2>
             <p>Dear {candidate['name']},</p>
-            
-            <p>We are pleased to invite you for an interview for the position of <strong>{job_title}</strong>.</p>
-            
+            <p>Congratulations! Based on your profile, we are pleased to invite you for an interview for the position of <strong>{job_title}</strong>.</p>
             <h3>Interview Details:</h3>
             <ul>
                 <li><strong>Date:</strong> {interview_date.strftime('%B %d, %Y')}</li>
-                <li><strong>Time:</strong> {interview_date.strftime('%I:%M %p')}</li>
+                <li><strong>Time:</strong> 03:00 PM IST</li>
                 <li><strong>Duration:</strong> 45-60 minutes</li>
             </ul>
-            
             <p>The interview will be conducted via video call. You will receive a meeting link 30 minutes before the scheduled time.</p>
-            
             <h3>What to Prepare:</h3>
             <ul>
                 <li>Your portfolio or work samples</li>
                 <li>Questions about the role and company</li>
                 <li>Be ready to discuss your experience and skills</li>
             </ul>
-            
             <p>If you need to reschedule, please contact us at least 24 hours in advance.</p>
-            
             <p>We look forward to meeting you!</p>
-            
             <p>Best regards,<br>
             HR Team</p>
         </body>
         </html>
         """
-        
         return self.send_email(candidate['email'], subject, body)
     
     def send_salary_offer(self, candidate: Dict[str, Any], offer_amount: float, job_title: str) -> bool:

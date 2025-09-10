@@ -321,18 +321,24 @@
 #     def schedule_interviews(self, state: WorkflowState) -> dict[str, Any]:
 #         """Schedule interviews with selected candidates"""
 #         print("Scheduling interviews...")
-
 #         if not state.selected_candidates:
 #             return {"error_message": "No candidates selected for interviews"}
 
-#         # Schedule interviews for next week
-#         base_date = datetime.now() + timedelta(days=7)
+#         # Interview is 2 days after job posting
+#         if hasattr(state.job_posting, 'posted_at') and state.job_posting.posted_at:
+#             base_date = state.job_posting.posted_at + timedelta(days=2)
+#         else:
+#             base_date = datetime.now() + timedelta(days=2)
+
+#         # Google Calendar integration
+#         credentials_file = getattr(Config, 'GOOGLE_CALENDAR_CREDENTIALS', 'google_service_account.json')
+#         hr_email = getattr(Config, 'HR_EMAIL', 'hr@company.com')
+#         calendar = CalendarService(credentials_file)
+#         interview_time = datetime.time(15, 0)  # 3:00 PM IST
 
 #         for i, candidate in enumerate(state.selected_candidates):
-#             # Schedule interview 2 days apart
-#             interview_date = base_date + timedelta(days=i * 2)
+#             interview_date = datetime.combine(base_date.date(), interview_time)
 #             candidate.interview_scheduled = interview_date
-
 #             # Send interview invitation
 #             self.email_service.send_interview_invitation(
 #                 {
@@ -342,6 +348,13 @@
 #                 interview_date,
 #                 state.job_posting.title
 #             )
+#             # Create Google Calendar event
+#             summary = f"Interview: {candidate.name}"
+#             description = f"Interview with {candidate.name} for {state.job_posting.title}"
+#             attendees = [candidate.email, hr_email]
+#             event_link = calendar.create_interview_event(summary, description, interview_date, attendees)
+#             candidate.calendar_event_link = event_link
+#             print(f"Interview event created: {event_link}")
 
 #         print(f"Scheduled interviews for {len(state.selected_candidates)} candidates")
 #         return {"selected_candidates": state.selected_candidates, "current_step": "interviews_scheduled"}
