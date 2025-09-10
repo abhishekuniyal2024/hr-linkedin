@@ -59,12 +59,12 @@ class EmailService:
         <body>
             <h2>Interview Invitation</h2>
             <p>Dear {candidate['name']},</p>
-            <p>Congratulations! Based on your profile, we are pleased to invite you for an interview for the position of <strong>{job_title}</strong>.</p>
+            <p>Congratulations! You have been shortlisted for the next stage of our hiring process for the position of <strong>{job_title}</strong>.</p>
             <h3>Interview Details:</h3>
             <ul>
                 <li><strong>Date:</strong> {interview_date.strftime('%B %d, %Y')}</li>
-                <li><strong>Time:</strong> 03:00 PM IST</li>
-                <li><strong>Duration:</strong> 45-60 minutes</li>
+                <li><strong>Time:</strong> {interview_date.strftime('%I:%M %p')}</li>
+                <li><strong>Duration:</strong> 30 minutes</li>
             </ul>
             <p>The interview will be conducted via video call. You will receive a meeting link 30 minutes before the scheduled time.</p>
             <h3>What to Prepare:</h3>
@@ -161,29 +161,19 @@ class EmailService:
     def send_rejection_email(self, candidate: Dict[str, Any], job_title: str) -> bool:
         """Send rejection email"""
         subject = f"Application Update - {job_title}"
-        
         body = f"""
         <html>
         <body>
             <h2>Application Update</h2>
             <p>Dear {candidate['name']},</p>
-            
-            <p>Thank you for your interest in the <strong>{job_title}</strong> position and for taking the time to interview with us.</p>
-            
-            <p>After careful consideration, we regret to inform you that we have decided to move forward with other candidates whose qualifications more closely match our current needs.</p>
-            
-            <p>We were impressed by your background and experience, and we appreciate the time you spent with us during the interview process.</p>
-            
-            <p>We will keep your resume on file for future opportunities that may be a better fit for your skills and experience.</p>
-            
-            <p>We wish you the best in your job search and future endeavors.</p>
-            
+            <p>Thank you for your interest in the <strong>{job_title}</strong> position.</p>
+            <p>After reviewing your application, we regret to inform you that we will not be moving forward at this time.</p>
+            <p>We appreciate your time and effort in applying, and wish you the best in your job search.</p>
             <p>Best regards,<br>
             HR Team</p>
         </body>
         </html>
         """
-        
         return self.send_email(candidate['email'], subject, body)
     
     def send_human_approval_request(self, job_posting: Dict[str, Any], admin_email: str) -> bool:

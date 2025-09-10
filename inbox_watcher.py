@@ -64,12 +64,12 @@ def run_inbox_scan():
             })
             # Decide acceptance (simple: score >= 60)
             if scoring.get('score', 0) >= 60:
-                # Calculate interview time for this candidate
+                # Calculate interview time for this candidate (fixed slot)
                 interview_datetime = datetime.datetime.combine(
                     interview_day,
                     (datetime.datetime.combine(interview_day, interview_start_time) + datetime.timedelta(minutes=accepted_count * interview_duration)).time()
                 )
-                # Send acceptance email with exact slot
+                # Send simple congratulation email with fixed interview slot (no ATS score, no slot options)
                 email_svc.send_interview_invitation(
                     {'name': r.get('from_email'), 'email': r.get('from_email')},
                     interview_datetime,
@@ -83,11 +83,20 @@ def run_inbox_scan():
                 print(f"Google Calendar event created: {event_link}")
                 accepted_count += 1
             else:
-                # Send rejection email
-                email_svc.send_rejection_email(
-                    {'name': r.get('from_email'), 'email': r.get('from_email')},
-                    "Application Update"
-                )
+                # Send simple sorry email (no ATS score, no slot options)
+                subject = "Application Update"
+                body = f"""
+                <html>
+                <body>
+                    <h2>Application Update</h2>
+                    <p>Dear {r.get('from_email')},</p>
+                    <p>Thank you for your interest in the position. After careful review, we regret to inform you that we will not be moving forward with your application at this time.</p>
+                    <p>We appreciate your interest and encourage you to apply for future opportunities.</p>
+                    <p>Best regards,<br>Hiring Team</p>
+                </body>
+                </html>
+                """
+                email_svc.send_email(r.get('from_email'), subject, body)
         # Print detailed summary with scoring breakdown
         print("\n📊 ATS Summary (new resumes):")
         for row in summary_rows:
