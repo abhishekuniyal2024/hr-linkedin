@@ -784,17 +784,13 @@ class JobAutomationWorkflow:
 
                 job_title = "Interview - Current Opening"
                 # Send interview scheduling emails to invitees
+                slot_index = 0  # to keep a 30-minute gap between candidates
                 for r in summaries:
                     to_email = r.get('candidate') or ""
                     if not to_email:
                         continue
                     if to_email in invitees:
-                        # Use new template without ATS score
-                        notifier.send_interview_invitation(
-                            {"name": to_email, "email": to_email},
-                            job_title,
-                        )
-                        # Schedule interview 2 days later at 14:00
+                        # Schedule interview 2 days later at 14:00 and include details in email
                         try:
                             from calendar_service import CalendarService
                             import os as _os
@@ -802,22 +798,38 @@ class JobAutomationWorkflow:
                             credentials_file = _os.getenv("GOOGLE_CALENDAR_CREDENTIALS", "google_service_account.json")
                             calendar_id = _os.getenv("GOOGLE_CALENDAR_ID", _os.getenv("EMAIL_USERNAME"))
                             calendar = CalendarService(credentials_file, calendar_id)
-                            interview_day = (_dt.now() + _td(days=2)).date()
-                            interview_start_time = _time(14, 0)
+                            # Start 2 days later at 14:00, roll forward to weekday if needed
+                            base_dt = _dt.combine((_dt.now() + _td(days=2)).date(), _time(14, 0))
+                            while base_dt.weekday() >= 5:  # 5=Sat, 6=Sun
+                                base_dt = base_dt + _td(days=1)
+                            # Add 30-min gap per invitee
                             interview_duration = 30
-                            interview_datetime = _dt.combine(interview_day, interview_start_time)
+                            interview_datetime = base_dt + _td(minutes=slot_index * 30)
                             summary = f"Interview: {to_email}"
                             description = f"Interview scheduled for candidate {to_email} (auto)"
                             attendees = [to_email, _os.getenv('EMAIL_USERNAME')]
-                            calendar.create_interview_event(
+                            event_link = calendar.create_interview_event(
                                 summary,
                                 description,
                                 interview_datetime,
                                 attendees,
                                 duration_minutes=interview_duration,
                             )
+                            # Send invitation including the scheduled details
+                            notifier.send_interview_invitation(
+                                {"name": to_email, "email": to_email},
+                                job_title,
+                                interview_datetime=interview_datetime,
+                                event_link=event_link,
+                            )
+                            slot_index += 1
                         except Exception as _cal_err:
                             print(f"Warning: Failed to schedule calendar event: {_cal_err}")
+                            # Fallback to template asking for availability
+                            notifier.send_interview_invitation(
+                                {"name": to_email, "email": to_email},
+                                job_title,
+                            )
 
                 # Send rejection emails to the rest
                 for r in summaries:

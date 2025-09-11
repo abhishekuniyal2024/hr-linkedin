@@ -47,8 +47,10 @@ def run_inbox_scan():
         calendar_id = os.getenv("GOOGLE_CALENDAR_ID", os.getenv("EMAIL_USERNAME"))
         calendar = CalendarService(credentials_file, calendar_id)
         accepted_count = 0
-        interview_day = (datetime.datetime.now() + datetime.timedelta(days=2)).date()
-        interview_start_time = datetime.time(14, 0)  # 2:00 PM
+        # Start 2 days later at 14:00 and roll forward to a weekday if needed
+        base_dt = datetime.datetime.combine((datetime.datetime.now() + datetime.timedelta(days=2)).date(), datetime.time(14, 0))
+        while base_dt.weekday() >= 5:  # 5=Sat, 6=Sun
+            base_dt = base_dt + datetime.timedelta(days=1)
         interview_duration = 30  # minutes
         # First pass: score all resumes and build summary
         for r in resumes:
@@ -69,21 +71,32 @@ def run_inbox_scan():
         invitees = {row.get('candidate') for row in ordered[:3] if row.get('candidate')}
 
         # Second pass: send invites to top 3 and rejections to the rest
+        slot_index = 0
         for row in summary_rows:
             to_email = row.get('candidate') or ''
             if not to_email:
                 continue
             if to_email in invitees:
-                email_svc.send_interview_invitation(
-                    {'name': to_email, 'email': to_email},
-                    "Interview for your application"
-                )
-                interview_datetime = datetime.datetime.combine(interview_day, interview_start_time)
+                interview_datetime = base_dt + datetime.timedelta(minutes=slot_index * 30)
                 summary = f"Interview: {to_email}"
                 description = f"Interview scheduled for candidate {to_email} (auto)"
                 attendees = [to_email, os.getenv('EMAIL_USERNAME')]
-                event_link = calendar.create_interview_event(summary, description, interview_datetime, attendees, duration_minutes=interview_duration)
-                print(f"Google Calendar event created: {event_link}")
+                try:
+                    event_link = calendar.create_interview_event(summary, description, interview_datetime, attendees, duration_minutes=interview_duration)
+                    print(f"Google Calendar event created: {event_link}")
+                    email_svc.send_interview_invitation(
+                        {'name': to_email, 'email': to_email},
+                        "Interview for your application",
+                        interview_datetime=interview_datetime,
+                        event_link=event_link,
+                    )
+                    slot_index += 1
+                except Exception as _cal_err:
+                    print(f"Warning: Failed to schedule calendar event: {_cal_err}")
+                    email_svc.send_interview_invitation(
+                        {'name': to_email, 'email': to_email},
+                        "Interview for your application",
+                    )
                 accepted_count += 1
             else:
                 email_svc.send_rejection_email(

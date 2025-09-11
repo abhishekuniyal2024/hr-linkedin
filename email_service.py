@@ -1,7 +1,7 @@
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 from config import Config
 import imaplib
@@ -51,13 +51,32 @@ class EmailService:
             print(f"Error sending email to {to_email}: {str(e)}")
             return False
     
-    def send_interview_invitation(self, candidate: Dict[str, Any], job_title: str) -> bool:
-        """Send congratulation email and ask for availability (template-based)"""
+    def send_interview_invitation(self, candidate: Dict[str, Any], job_title: str, interview_datetime: Optional[datetime] = None, event_link: Optional[str] = None) -> bool:
+        """Send congratulation email.
+
+        - If interview details are provided, include the scheduled date/time and calendar link.
+        - Otherwise, fall back to the template asking for availability.
+        """
         subject = f"Congratulations - Next Steps for {job_title}"
-        # Commented out the old inline template code below to prevent accidental use:
-        # body = f"""
-        # <html>...</html>
-        # """
+
+        # If we have a scheduled interview, include details
+        if interview_datetime or event_link:
+            when_str = interview_datetime.strftime('%A, %d %B %Y at %I:%M %p %Z') if interview_datetime else 'the scheduled time'
+            # Note: times are created in local tz context; label as IST for clarity
+            body = (
+                f"<html><body>"
+                f"<h2>Congratulations!</h2>"
+                f"<p>Dear {candidate['name']},</p>"
+                f"<p>You have been shortlisted for the next stage for <strong>{job_title}</strong>.</p>"
+                f"<p><strong>Interview Time:</strong> {when_str} (IST)</p>"
+                + (f"<p><strong>Calendar:</strong> <a href=\"{event_link}\">View the event</a></p>" if event_link else "") +
+                f"<p>If this time does not work for you, please reply with 2–3 alternate slots.</p>"
+                f"<p>Best regards,<br>HR Team</p>"
+                f"</body></html>"
+            )
+            return self.send_email(candidate['email'], subject, body)
+
+        # Otherwise use the availability template
         template_path = os.path.join(os.path.dirname(__file__), 'templates', 'congratulations_ask_availability.html')
         with open(template_path, encoding='utf-8') as f:
             template = f.read()
