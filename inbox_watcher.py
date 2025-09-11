@@ -50,6 +50,7 @@ def run_inbox_scan():
         interview_day = (datetime.datetime.now() + datetime.timedelta(days=2)).date()
         interview_start_time = datetime.time(14, 0)  # 2:00 PM
         interview_duration = 30  # minutes
+        # First pass: score all resumes and build summary
         for r in resumes:
             text = r.get('text', '') or ''
             scoring = ai.score_resume_against_requirements(text, requirements)
@@ -62,26 +63,31 @@ def run_inbox_scan():
                 'missing': ", ".join(scoring.get('missing', [])[:4]),
                 'breakdown': breakdown
             })
-            # Decide acceptance (simple: score >= 60)
-            if scoring.get('score', 0) >= 60:
-                # Use the new template-based congratulation email (ask for availability)
+
+        # Determine top 3 candidates strictly by score
+        ordered = sorted(summary_rows, key=lambda row: row.get('score', 0), reverse=True)
+        invitees = {row.get('candidate') for row in ordered[:3] if row.get('candidate')}
+
+        # Second pass: send invites to top 3 and rejections to the rest
+        for row in summary_rows:
+            to_email = row.get('candidate') or ''
+            if not to_email:
+                continue
+            if to_email in invitees:
                 email_svc.send_interview_invitation(
-                    {'name': r.get('from_email'), 'email': r.get('from_email')},
+                    {'name': to_email, 'email': to_email},
                     "Interview for your application"
                 )
-                # Schedule interview on Google Calendar
-                # Build interview datetime 2 days later at 14:00
                 interview_datetime = datetime.datetime.combine(interview_day, interview_start_time)
-                summary = f"Interview: {r.get('from_email')}"
-                description = f"Interview scheduled for candidate {r.get('from_email')} (auto)"
-                attendees = [r.get('from_email'), os.getenv('EMAIL_USERNAME')]
+                summary = f"Interview: {to_email}"
+                description = f"Interview scheduled for candidate {to_email} (auto)"
+                attendees = [to_email, os.getenv('EMAIL_USERNAME')]
                 event_link = calendar.create_interview_event(summary, description, interview_datetime, attendees, duration_minutes=interview_duration)
                 print(f"Google Calendar event created: {event_link}")
                 accepted_count += 1
             else:
-                # Use the new template-based rejection email
                 email_svc.send_rejection_email(
-                    {'name': r.get('from_email'), 'email': r.get('from_email')},
+                    {'name': to_email, 'email': to_email},
                     "Interview for your application"
                 )
         # Print detailed summary with scoring breakdown

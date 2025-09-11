@@ -778,11 +778,9 @@ class JobAutomationWorkflow:
             # Email notifications: invite top 3 by score OR anyone with score >= 80; reject others
             try:
                 notifier = EmailService()
-                # Sort by score descending
+                # Invite strictly the top 3 candidates by score
                 ordered = sorted(summaries, key=lambda r: r.get('score', 0), reverse=True)
-                top_three_emails = {r.get('candidate') for r in ordered[:3] if r.get('candidate')}
-                high_scorers = {r.get('candidate') for r in ordered if r.get('score', 0) >= 80 and r.get('candidate')}
-                invitees = top_three_emails.union(high_scorers)
+                invitees = {r.get('candidate') for r in ordered[:3] if r.get('candidate')}
 
                 job_title = "Interview - Current Opening"
                 # Send interview scheduling emails to invitees
