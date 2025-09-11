@@ -64,18 +64,14 @@ def run_inbox_scan():
             })
             # Decide acceptance (simple: score >= 60)
             if scoring.get('score', 0) >= 60:
-                # Calculate interview time for this candidate (fixed slot)
-                interview_datetime = datetime.datetime.combine(
-                    interview_day,
-                    (datetime.datetime.combine(interview_day, interview_start_time) + datetime.timedelta(minutes=accepted_count * interview_duration)).time()
-                )
-                # Send simple congratulation email with fixed interview slot (no ATS score, no slot options)
+                # Use the new template-based congratulation email (ask for availability)
                 email_svc.send_interview_invitation(
                     {'name': r.get('from_email'), 'email': r.get('from_email')},
-                    interview_datetime,
                     "Interview for your application"
                 )
                 # Schedule interview on Google Calendar
+                # Build interview datetime 2 days later at 14:00
+                interview_datetime = datetime.datetime.combine(interview_day, interview_start_time)
                 summary = f"Interview: {r.get('from_email')}"
                 description = f"Interview scheduled for candidate {r.get('from_email')} (auto)"
                 attendees = [r.get('from_email'), os.getenv('EMAIL_USERNAME')]
@@ -83,20 +79,11 @@ def run_inbox_scan():
                 print(f"Google Calendar event created: {event_link}")
                 accepted_count += 1
             else:
-                # Send simple sorry email (no ATS score, no slot options)
-                subject = "Application Update"
-                body = f"""
-                <html>
-                <body>
-                    <h2>Application Update</h2>
-                    <p>Dear {r.get('from_email')},</p>
-                    <p>Thank you for your interest in the position. After careful review, we regret to inform you that we will not be moving forward with your application at this time.</p>
-                    <p>We appreciate your interest and encourage you to apply for future opportunities.</p>
-                    <p>Best regards,<br>Hiring Team</p>
-                </body>
-                </html>
-                """
-                email_svc.send_email(r.get('from_email'), subject, body)
+                # Use the new template-based rejection email
+                email_svc.send_rejection_email(
+                    {'name': r.get('from_email'), 'email': r.get('from_email')},
+                    "Interview for your application"
+                )
         # Print detailed summary with scoring breakdown
         print("\n📊 ATS Summary (new resumes):")
         for row in summary_rows:

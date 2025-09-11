@@ -791,34 +791,46 @@ class JobAutomationWorkflow:
                     if not to_email:
                         continue
                     if to_email in invitees:
-                        subject = f"Interview Scheduling - {job_title}"
-                        body = (
-                            f"<html><body>"
-                            f"<p>Dear Candidate,</p>"
-                            f"<p>Congratulations! Based on your profile (ATS score: <strong>{r.get('score', 0)}/100</strong>), "
-                            f"we would like to invite you to the next stage.</p>"
-                            f"<p>Please reply with your availability (two to three time slots) over the next 3 business days, "
-                            f"and we will confirm the interview time and date.</p>"
-                            f"<p>Best regards,<br>Hiring Team</p>"
-                            f"</body></html>"
+                        # Use new template without ATS score
+                        notifier.send_interview_invitation(
+                            {"name": to_email, "email": to_email},
+                            job_title,
                         )
-                        notifier.send_email(to_email, subject, body)
+                        # Schedule interview 2 days later at 14:00
+                        try:
+                            from calendar_service import CalendarService
+                            import os as _os
+                            from datetime import datetime as _dt, timedelta as _td, time as _time
+                            credentials_file = _os.getenv("GOOGLE_CALENDAR_CREDENTIALS", "google_service_account.json")
+                            calendar_id = _os.getenv("GOOGLE_CALENDAR_ID", _os.getenv("EMAIL_USERNAME"))
+                            calendar = CalendarService(credentials_file, calendar_id)
+                            interview_day = (_dt.now() + _td(days=2)).date()
+                            interview_start_time = _time(14, 0)
+                            interview_duration = 30
+                            interview_datetime = _dt.combine(interview_day, interview_start_time)
+                            summary = f"Interview: {to_email}"
+                            description = f"Interview scheduled for candidate {to_email} (auto)"
+                            attendees = [to_email, _os.getenv('EMAIL_USERNAME')]
+                            calendar.create_interview_event(
+                                summary,
+                                description,
+                                interview_datetime,
+                                attendees,
+                                duration_minutes=interview_duration,
+                            )
+                        except Exception as _cal_err:
+                            print(f"Warning: Failed to schedule calendar event: {_cal_err}")
 
                 # Send rejection emails to the rest
                 for r in summaries:
                     to_email = r.get('candidate') or ""
                     if not to_email or to_email in invitees:
                         continue
-                    subject = f"Application Update - {job_title}"
-                    body = (
-                        f"<html><body>"
-                        f"<p>Dear Candidate,</p>"
-                        f"<p>Thank you for applying. After review (ATS score: <strong>{r.get('score', 0)}/100</strong>), "
-                        f"we will not be moving forward at this time. We appreciate your interest and encourage you to apply for future roles.</p>"
-                        f"<p>Best regards,<br>Hiring Team</p>"
-                        f"</body></html>"
+                    # Use new rejection template without ATS score
+                    notifier.send_rejection_email(
+                        {"name": to_email, "email": to_email},
+                        job_title,
                     )
-                    notifier.send_email(to_email, subject, body)
             except Exception as notify_err:
                 print(f"Warning: Failed to send notifications: {notify_err}")
             return state
